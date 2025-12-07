@@ -100,6 +100,27 @@ Claude, lütfen aşağıdaki teknik kısıtlamalara **kesinlikle** uy:
 - **AI Prompts:** Use "System Prompts" to instruct Rovo to act as a **"Senior Site Reliability Engineer"** and **"F1 Race Strategist"**.  
 - **Not:** Zaman kazanmak için minimal, test edilebilir kod yaz. Demo sırasında hata vermemeli.
 
+### 4.1 MANDATORY TECHNICAL STACK & STANDARDS (Resume-Driven Development)
+
+**IMPORTANT FOR CLAUDE:** We are not just building a hackathon prototype. We are building a production-grade, scalable foundation that will be used to demonstrate high-level engineering skills.
+
+##### 4.1.1 Language & Type Safety
+* **Language:** TypeScript (Strict Mode enabled). No `any` types allowed unless absolutely necessary.
+* **Validation:** Use `zod` or `io-ts` for runtime validation of API responses (Jira/Bitbucket data).
+* **Architecture:** Hexagonal Architecture (Ports & Adapters). Isolate the core business logic from the Atlassian Forge infrastructure.
+
+##### 4.1.2. AI & Data Architecture (RAG-Ready)
+* **Current (Hackathon):** Implement a modular "Context Service". Even if we use simple API calls for now, the interface must be designed to support a Vector Database (like Pinecone) integration in the future without rewriting the core logic.
+* **Prompt Engineering:** Store prompts as separate assets/templates, not hardcoded strings. Use "Chain of Thought" prompting techniques for the Rovo Agent.
+
+##### 4.1.3 Event-Driven & Async
+* **Async Queue:** Use Forge Async Events API for long-running analysis tasks (e.g., scanning large git diffs) to avoid timeout limits.
+* **Webhook Architecture:** Design the system to be extensible via Webhooks (e.g., sending results to a Slack URL in the future).
+
+##### 4.1.4 Code Quality & CI/CD
+* **Linting:** Prettier + ESLint configuration.
+* **Testing:** Write unit tests (Jest) for the core logic (e.g., the commit-matching algorithm).
+
 ---
 
 ## 5. "HACKS" FOR WINNING (Tips for Ozgur)
