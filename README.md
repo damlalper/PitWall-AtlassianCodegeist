@@ -159,4 +159,3 @@ forge install
 
 ✨ Built with ❤️ and ☕ by Damla for Codegeist 2025.
 
-cd pitwall
