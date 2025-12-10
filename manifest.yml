@@ -1,0 +1,102 @@
+modules:
+  # ============================================
+  # ROVO AGENT MODULE (Best Rovo Apps - $2,000)
+  # ============================================
+  rovo:agent:
+    - key: pitwall-race-engineer
+      name: PitWall Race Engineer
+      description: AI-powered incident analysis that acts like a Formula 1 race engineer
+      prompt: |
+        You are an expert Site Reliability Engineer and Formula 1 Race Strategist working as "The Race Engineer" for software incidents.
+
+        When analyzing a software incident:
+        1. Think like an F1 engineer analyzing telemetry data
+        2. Identify the "crash" (root cause) from code changes
+        3. Calculate the probability score (confidence level)
+        4. Suggest a "pit stop strategy" (rollback, hotfix, or workaround)
+
+        Always respond in this format:
+        - Confidence Score: X%
+        - Root Cause: [description]
+        - Recommended Strategy: [action steps]
+        - Affected Component: [file/service name]
+
+        Be concise, precise, and action-oriented. Speed matters - just like in F1.
+
+      conversationStarters:
+        - Analyze this incident
+        - What caused this crash?
+        - Suggest a pit stop strategy
+
+      actions:
+        - analyze-incident
+
+  # ============================================
+  # ROVO ACTION (AI Agent Actions)
+  # ============================================
+  action:
+    - key: analyze-incident
+      name: Analyze Incident
+      description: Analyzes a software incident and provides root cause analysis with recommended strategies
+      actionVerb: GET
+      function: analyze-incident-fn
+      inputs:
+        issueKey:
+          title: Jira Issue Key
+          type: string
+          required: false
+          description: The Jira issue key for the incident to analyze
+
+  # ============================================
+  # JIRA ISSUE PANEL (UI Kit 2)
+  # ============================================
+  jira:issuePanel:
+    - key: pitwall-dashboard
+      title: PitWall Telemetry
+      icon: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      function: pitwall-panel
+
+  # ============================================
+  # TRIGGER: Auto-detect P1/P2 incidents
+  # ============================================
+  trigger:
+    - key: incident-detector
+      function: incident-trigger
+      events:
+        - avi:jira:created:issue
+
+  # ============================================
+  # BACKEND FUNCTIONS
+  # ============================================
+  function:
+    - key: analyze-incident-fn
+      handler: analyzers/incidentAnalyzer.handler
+
+    - key: incident-trigger
+      handler: triggers/incidentTrigger.handler
+
+    - key: pitwall-panel
+      handler: ui/panel.handler
+
+# ============================================
+# APP METADATA
+# ============================================
+app:
+  runtime:
+    name: nodejs20.x
+  id: ari:cloud:ecosystem::app/b39ec19a-7b6d-4c1b-920b-57e2fad188d0
+
+# ============================================
+# PERMISSIONS (Cross-Product AI Context Engine)
+# ============================================
+permissions:
+  scopes:
+    - read:jira-work
+    - write:jira-work
+    - read:confluence-content.summary
+    - read:confluence-space.summary
+    - storage:app
+  external:
+    fetch:
+      backend:
+        - 'api.bitbucket.org'

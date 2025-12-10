@@ -1,0 +1,38 @@
+{
+  "name": "pitwall",
+  "version": "1.0.0",
+  "description": "Your AI Race Engineer for Critical Software Incidents - Atlassian Forge App",
+  "author": "Damla Alper",
+  "license": "MIT",
+  "main": "src/index.tsx",
+  "scripts": {
+    "build": "tsc",
+    "deploy": "forge deploy",
+    "forge:install": "forge install",
+    "forge:tunnel": "forge tunnel",
+    "lint": "eslint src --ext .ts,.tsx",
+    "format": "prettier --write 'src/**/*.{ts,tsx}'",
+    "test": "jest",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@forge/api": "^6.4.1",
+    "@forge/resolver": "^1.7.1",
+    "@forge/ui": "^1.11.4",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.1",
+    "jest": "^29.7.0",
+    "prettier": "^3.1.0",
+    "typescript": "^5.3.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
