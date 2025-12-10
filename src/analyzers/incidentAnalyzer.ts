@@ -161,6 +161,17 @@ ${strategy.steps.map((step, i) => `   ${i + 1}. ${step}`).join('\n')}
       await addJiraComment(issueKey, analysis, aiAnalysis.recommendedAction);
     }
 
+    // STEP 8: Auto-label and update issue fields
+    if (issueKey) {
+      await autoLabelAndUpdateIssue(issueKey, {
+        aiConfidence: confidence,
+        rootCause: rootCause.description,
+        recommendedAction: aiAnalysis.recommendedAction,
+        riskLevel: rootCause.riskLevel,
+        estimatedMTTR: strategy.estimatedTime,
+      });
+    }
+
     return {
       analysis,
     };
@@ -395,5 +406,133 @@ async function storeIncidentMetrics(
     console.warn(`[PitWall Storage] ✅ Stored metrics for ${issueKey}`);
   } catch (error) {
     console.error('[PitWall Storage] ❌ Error storing metrics:', error);
+  }
+}
+
+/**
+ * Auto-label and update Jira issue with AI analysis results
+ * Professional Jira apps always add labels and custom fields
+ */
+async function autoLabelAndUpdateIssue(
+  issueKey: string,
+  metadata: {
+    aiConfidence: number;
+    rootCause: string;
+    recommendedAction: string;
+    riskLevel: string;
+    estimatedMTTR: string;
+  }
+): Promise<void> {
+  try {
+    console.warn(`[PitWall Jira] 🏷️  Auto-labeling ${issueKey}...`);
+
+    // Get current labels
+    const issueResponse = await api.asUser().requestJira(route`/rest/api/3/issue/${issueKey}`);
+    const issueData = await issueResponse.json();
+    const currentLabels = issueData.fields.labels || [];
+
+    // Build smart labels based on analysis
+    const newLabels = [
+      'ai-analyzed', // Always add this
+      `confidence-${metadata.aiConfidence >= 80 ? 'high' : metadata.aiConfidence >= 60 ? 'medium' : 'low'}`,
+      `action-${metadata.recommendedAction.toLowerCase()}`,
+      `risk-${metadata.riskLevel.toLowerCase()}`,
+    ];
+
+    // Merge with existing labels (no duplicates)
+    const mergedLabels = [...new Set([...currentLabels, ...newLabels])];
+
+    // Update issue with labels and description
+    const updatePayload = {
+      fields: {
+        labels: mergedLabels,
+      },
+      update: {
+        // Add AI analysis metadata to description
+        description: [
+          {
+            add: {
+              type: 'doc',
+              version: 1,
+              content: [
+                {
+                  type: 'panel',
+                  attrs: { panelType: 'info' },
+                  content: [
+                    {
+                      type: 'paragraph',
+                      content: [
+                        {
+                          type: 'text',
+                          text: '🏎️ PitWall AI Analysis',
+                          marks: [{ type: 'strong' }],
+                        },
+                      ],
+                    },
+                    {
+                      type: 'paragraph',
+                      content: [
+                        { type: 'text', text: `AI Confidence: ${metadata.aiConfidence}% | ` },
+                        { type: 'text', text: `Risk: ${metadata.riskLevel} | ` },
+                        { type: 'text', text: `MTTR: ${metadata.estimatedMTTR}` },
+                      ],
+                    },
+                    {
+                      type: 'paragraph',
+                      content: [
+                        { type: 'text', text: `Root Cause: ${metadata.rootCause}` },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+
+    await api.asUser().requestJira(route`/rest/api/3/issue/${issueKey}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updatePayload),
+    });
+
+    console.warn(`[PitWall Jira] ✅ Labels added: ${newLabels.join(', ')}`);
+
+    // If CRITICAL risk, bump priority if possible
+    if (metadata.riskLevel === 'CRITICAL') {
+      await adjustPriority(issueKey, 'Highest');
+    }
+  } catch (error) {
+    console.error('[PitWall Jira] ❌ Error auto-labeling:', error);
+  }
+}
+
+/**
+ * Adjust issue priority based on risk level
+ */
+async function adjustPriority(issueKey: string, priorityName: string): Promise<void> {
+  try {
+    console.warn(`[PitWall Jira] ⚡ Adjusting priority to ${priorityName}...`);
+
+    await api.asUser().requestJira(route`/rest/api/3/issue/${issueKey}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        fields: {
+          priority: { name: priorityName },
+        },
+      }),
+    });
+
+    console.warn(`[PitWall Jira] ✅ Priority adjusted to ${priorityName}`);
+  } catch (error) {
+    console.error('[PitWall Jira] ⚠️  Could not adjust priority:', error);
+    // Not critical - many projects have different priority schemes
   }
 }
