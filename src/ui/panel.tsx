@@ -30,14 +30,20 @@ const App = () => {
     totalIncidents: 0,
     avgConfidence: 0,
   });
+  const [recentAnalyses, setRecentAnalyses] = useState<any[]>([]);
 
-  // Load incident stats from storage on mount
+  // Load incident stats and recent analyses from storage on mount
   useState(async () => {
     try {
       const incidentStats = await storage.get('incident-stats');
       if (incidentStats) {
         setStats(incidentStats);
       }
+
+      // Load recent analyses (last 5)
+      const allMetrics = (await storage.get('incident-metrics')) || [];
+      const recent = allMetrics.slice(-5).reverse(); // Last 5, most recent first
+      setRecentAnalyses(recent);
     } catch (err) {
       console.error('[PitWall Panel] Error loading stats:', err);
     }
@@ -388,6 +394,53 @@ const App = () => {
           </Text>
         </SectionMessage>
       ) : null}
+
+      {/* Recent Analyses Timeline */}
+      <Text>───────────────────────────────────────</Text>
+      <Text>
+        <Strong>Recent Incident Timeline</Strong>
+      </Text>
+      <Text>Last 5 analyzed incidents across all projects</Text>
+
+      {recentAnalyses && recentAnalyses.length > 0 ? (
+        <Fragment>
+          {recentAnalyses.map((incident: any, index: number) => {
+            const timestamp = new Date(incident.timestamp).toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+
+            const confidenceBadge =
+              incident.aiConfidence >= 80 ? 'success' : incident.aiConfidence >= 60 ? 'moved' : 'removed';
+
+            const riskColor =
+              incident.priority === 'Highest' || incident.priority === 'High' ? 'removed' : 'moved';
+
+            return (
+              <Fragment key={index}>
+                <Text>
+                  <Strong>{`${index + 1}. ${incident.issueKey || 'N/A'}`}</Strong>
+                  {' • '}
+                  {timestamp}
+                </Text>
+                <Text>
+                  {'   Priority: '}
+                  <StatusLozenge text={incident.priority || 'Unknown'} appearance={riskColor} />
+                  {'   AI: '}
+                  <StatusLozenge text={`${incident.aiConfidence}%`} appearance={confidenceBadge} />
+                </Text>
+                <Text>{`   Action: ${incident.recommendedAction || 'N/A'}`}</Text>
+                <Text>{`   Suspects: ${incident.suspectCommits || 0} commits | Runbooks: ${incident.runbooksFound || 0}`}</Text>
+                {index < recentAnalyses.length - 1 ? <Text>{'   ↓'}</Text> : null}
+              </Fragment>
+            );
+          })}
+        </Fragment>
+      ) : (
+        <Text>No recent analyses available. Run your first analysis above!</Text>
+      )}
 
       {/* Footer */}
       <Text>───────────────────────────────────────</Text>
