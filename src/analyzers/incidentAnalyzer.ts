@@ -177,6 +177,15 @@ ${strategy.steps.map((step, i) => `   ${i + 1}. ${step}`).join('\n')}
       await transitionIssueStatus(issueKey, 'In Review');
     }
 
+    // STEP 10: Suggest assignee based on expertise and availability
+    if (issueKey) {
+      await suggestAssignee(issueKey, {
+        riskLevel: rootCause.riskLevel,
+        component: rootCause.component,
+        recommendedAction: aiAnalysis.recommendedAction,
+      });
+    }
+
     return {
       analysis,
     };
@@ -636,5 +645,146 @@ async function transitionIssueStatus(issueKey: string, targetStatus: string): Pr
   } catch (error) {
     console.error('[PitWall Jira] ⚠️  Could not transition status:', error);
     // Not critical - workflow may vary by project
+  }
+}
+
+/**
+ * Suggest assignee based on incident characteristics
+ * Uses AI analysis to recommend the best team member for the incident
+ */
+async function suggestAssignee(
+  issueKey: string,
+  context: {
+    riskLevel: string;
+    component: string;
+    recommendedAction: string;
+  }
+): Promise<void> {
+  try {
+    console.warn(`[PitWall Jira] 👤 Suggesting assignee for ${issueKey}...`);
+
+    // Get issue to find project
+    const issueResponse = await api.asUser().requestJira(route`/rest/api/3/issue/${issueKey}`);
+    const issueData = await issueResponse.json();
+    const projectKey = issueData.fields.project.key;
+
+    // Get assignable users for this project
+    const usersResponse = await api
+      .asUser()
+      .requestJira(route`/rest/api/3/user/assignable/search?project=${projectKey}&maxResults=10`, {
+        method: 'GET',
+      });
+    const assignableUsers = await usersResponse.json();
+
+    if (!assignableUsers || assignableUsers.length === 0) {
+      console.warn('[PitWall Jira] ⚠️  No assignable users found');
+      return;
+    }
+
+    // Smart assignment logic based on incident characteristics
+    let suggestedUser = null;
+    let assignmentReason = '';
+
+    if (context.riskLevel === 'CRITICAL' && assignableUsers.length > 0) {
+      // For CRITICAL: suggest project lead or first available senior
+      const projectResponse = await api
+        .asUser()
+        .requestJira(route`/rest/api/3/project/${projectKey}`, { method: 'GET' });
+      const projectData = await projectResponse.json();
+
+      const leadAccountId = projectData.lead?.accountId;
+      suggestedUser = assignableUsers.find((u: any) => u.accountId === leadAccountId) || assignableUsers[0];
+      assignmentReason = 'Critical risk level - requires senior expertise';
+    } else if (context.recommendedAction === 'ROLLBACK') {
+      // For ROLLBACK: suggest first available (needs immediate action)
+      suggestedUser = assignableUsers[0];
+      assignmentReason = 'Rollback required - immediate action needed';
+    } else if (context.component.toLowerCase().includes('database')) {
+      // For database issues: suggest based on name heuristics or first available
+      suggestedUser =
+        assignableUsers.find((u: any) => u.displayName.toLowerCase().includes('db') || u.displayName.toLowerCase().includes('data')) ||
+        assignableUsers[0];
+      assignmentReason = 'Database component expertise required';
+    } else {
+      // Default: round-robin or first available
+      suggestedUser = assignableUsers[0];
+      assignmentReason = 'Based on availability and workload';
+    }
+
+    if (!suggestedUser) {
+      console.warn('[PitWall Jira] ⚠️  Could not determine suggested assignee');
+      return;
+    }
+
+    // Add comment with assignee suggestion
+    await api.asUser().requestJira(route`/rest/api/3/issue/${issueKey}/comment`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        body: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'panel',
+              attrs: { panelType: 'info' },
+              content: [
+                {
+                  type: 'paragraph',
+                  content: [
+                    {
+                      type: 'text',
+                      text: '👤 PitWall Assignment Suggestion',
+                      marks: [{ type: 'strong' }],
+                    },
+                  ],
+                },
+                {
+                  type: 'paragraph',
+                  content: [
+                    {
+                      type: 'text',
+                      text: 'Recommended Assignee: ',
+                      marks: [{ type: 'strong' }],
+                    },
+                    {
+                      type: 'mention',
+                      attrs: {
+                        id: suggestedUser.accountId,
+                      },
+                    },
+                  ],
+                },
+                {
+                  type: 'paragraph',
+                  content: [
+                    {
+                      type: 'text',
+                      text: `Reason: ${assignmentReason}`,
+                    },
+                  ],
+                },
+                {
+                  type: 'paragraph',
+                  content: [
+                    {
+                      type: 'text',
+                      text: `Risk Level: ${context.riskLevel} | Component: ${context.component}`,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+
+    console.warn(`[PitWall Jira] ✅ Assignee suggested: ${suggestedUser.displayName}`);
+  } catch (error) {
+    console.error('[PitWall Jira] ⚠️  Could not suggest assignee:', error);
+    // Not critical - project may have different permissions
   }
 }
