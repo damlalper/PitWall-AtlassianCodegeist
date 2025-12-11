@@ -158,7 +158,7 @@ ${strategy.steps.map((step, i) => `   ${i + 1}. ${step}`).join('\n')}
 
     // STEP 7: Add automatic comment to Jira issue
     if (issueKey) {
-      await addJiraComment(issueKey, analysis, aiAnalysis.recommendedAction);
+      await addJiraComment(issueKey, analysis, aiAnalysis.recommendedAction, rootCause.riskLevel);
     }
 
     // STEP 8: Auto-label and update issue fields
@@ -286,11 +286,13 @@ function recommendStrategy(rootCause: { riskLevel: string }): {
 
 /**
  * Add automated comment to Jira issue with analysis results
+ * Mentions team lead on high-risk incidents (CRITICAL/HIGH)
  */
 async function addJiraComment(
   issueKey: string,
   analysis: string,
-  recommendedAction: string
+  recommendedAction: string,
+  riskLevel: string
 ): Promise<void> {
   try {
     console.warn(`[PitWall Jira] 💬 Adding comment to ${issueKey}...`);
@@ -304,42 +306,93 @@ async function addJiraComment(
             ? '🟢'
             : '🔵';
 
+    // Get team lead accountId for high-risk mentions
+    let teamLeadAccountId: string | null = null;
+    const shouldMention = riskLevel === 'CRITICAL' || riskLevel === 'HIGH';
+
+    if (shouldMention) {
+      try {
+        // Get issue to find project lead or reporter
+        const issueResponse = await api.asUser().requestJira(route`/rest/api/3/issue/${issueKey}`);
+        const issueData = await issueResponse.json();
+
+        // Try to get project lead first, fallback to reporter
+        const projectKey = issueData.fields.project.key;
+        const projectResponse = await api
+          .asUser()
+          .requestJira(route`/rest/api/3/project/${projectKey}`, { method: 'GET' });
+        const projectData = await projectResponse.json();
+
+        teamLeadAccountId = projectData.lead?.accountId || issueData.fields.reporter?.accountId;
+        console.warn(`[PitWall Jira] 👤 Team lead found: ${teamLeadAccountId}`);
+      } catch (error) {
+        console.error('[PitWall Jira] ⚠️  Could not fetch team lead for mention:', error);
+      }
+    }
+
+    // Build comment content with optional mention
+    const commentContent: any[] = [];
+
+    // Add mention paragraph for high-risk incidents
+    if (shouldMention && teamLeadAccountId) {
+      commentContent.push({
+        type: 'paragraph',
+        content: [
+          {
+            type: 'mention',
+            attrs: {
+              id: teamLeadAccountId,
+            },
+          },
+          {
+            type: 'text',
+            text: ` ${actionEmoji} URGENT: PitWall detected a ${riskLevel} risk incident requiring immediate attention!`,
+          },
+        ],
+      });
+    }
+
+    // Add main analysis header
+    commentContent.push({
+      type: 'paragraph',
+      content: [
+        {
+          type: 'text',
+          text: `${actionEmoji} PitWall Analysis Complete`,
+          marks: [{ type: 'strong' }],
+        },
+      ],
+    });
+
+    // Add analysis code block
+    commentContent.push({
+      type: 'codeBlock',
+      attrs: { language: 'text' },
+      content: [
+        {
+          type: 'text',
+          text: analysis,
+        },
+      ],
+    });
+
+    // Add recommended action
+    commentContent.push({
+      type: 'paragraph',
+      content: [
+        {
+          type: 'text',
+          text: `Recommended Action: ${recommendedAction}`,
+          marks: [{ type: 'strong' }],
+        },
+      ],
+    });
+
     const comment = {
       body: {
         type: 'doc',
         version: 1,
-        content: [
-          {
-            type: 'paragraph',
-            content: [
-              {
-                type: 'text',
-                text: `${actionEmoji} PitWall Analysis Complete`,
-                marks: [{ type: 'strong' }],
-              },
-            ],
-          },
-          {
-            type: 'codeBlock',
-            attrs: { language: 'text' },
-            content: [
-              {
-                type: 'text',
-                text: analysis,
-              },
-            ],
-          },
-          {
-            type: 'paragraph',
-            content: [
-              {
-                type: 'text',
-                text: `Recommended Action: ${recommendedAction}`,
-                marks: [{ type: 'strong' }],
-              },
-            ],
-          },
-        ],
+        content: commentContent,
       },
     };
 
@@ -351,7 +404,7 @@ async function addJiraComment(
       body: JSON.stringify(comment),
     });
 
-    console.warn(`[PitWall Jira] ✅ Comment added to ${issueKey}`);
+    console.warn(`[PitWall Jira] ✅ Comment added to ${issueKey}${shouldMention ? ' with @mention' : ''}`);
   } catch (error) {
     console.error('[PitWall Jira] ❌ Error adding comment:', error);
   }
