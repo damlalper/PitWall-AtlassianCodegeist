@@ -172,6 +172,11 @@ ${strategy.steps.map((step, i) => `   ${i + 1}. ${step}`).join('\n')}
       });
     }
 
+    // STEP 9: Transition issue status after analysis (Open → In Review)
+    if (issueKey) {
+      await transitionIssueStatus(issueKey, 'In Review');
+    }
+
     return {
       analysis,
     };
@@ -587,5 +592,49 @@ async function adjustPriority(issueKey: string, priorityName: string): Promise<v
   } catch (error) {
     console.error('[PitWall Jira] ⚠️  Could not adjust priority:', error);
     // Not critical - many projects have different priority schemes
+  }
+}
+
+/**
+ * Transition issue status after analysis completion
+ * Moves issue from "Open" or "To Do" → "In Review" or "In Progress"
+ */
+async function transitionIssueStatus(issueKey: string, targetStatus: string): Promise<void> {
+  try {
+    console.warn(`[PitWall Jira] 🔄 Transitioning ${issueKey} to ${targetStatus}...`);
+
+    // Get available transitions for this issue
+    const transitionsResponse = await api
+      .asUser()
+      .requestJira(route`/rest/api/3/issue/${issueKey}/transitions`, { method: 'GET' });
+    const transitionsData = await transitionsResponse.json();
+
+    // Find matching transition (case-insensitive)
+    const targetTransition = transitionsData.transitions.find(
+      (t: any) => t.name.toLowerCase() === targetStatus.toLowerCase() || t.to.name.toLowerCase() === targetStatus.toLowerCase()
+    );
+
+    if (!targetTransition) {
+      console.warn(`[PitWall Jira] ⚠️  No transition found to "${targetStatus}". Available: ${transitionsData.transitions.map((t: any) => t.to.name).join(', ')}`);
+      return;
+    }
+
+    // Execute transition
+    await api.asUser().requestJira(route`/rest/api/3/issue/${issueKey}/transitions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        transition: {
+          id: targetTransition.id,
+        },
+      }),
+    });
+
+    console.warn(`[PitWall Jira] ✅ Status transitioned to ${targetTransition.to.name}`);
+  } catch (error) {
+    console.error('[PitWall Jira] ⚠️  Could not transition status:', error);
+    // Not critical - workflow may vary by project
   }
 }
