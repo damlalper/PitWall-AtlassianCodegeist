@@ -2,6 +2,7 @@ import api, { route, storage } from '@forge/api';
 import { scanBitbucketCommits, extractKeywords } from '../scanners/bitbucketScanner';
 import { findRelatedRunbooks } from '../scanners/confluenceScanner';
 import { analyzeWithAtlassianAI } from '../ai/atlassianAI';
+import { logIncidentAnalysis } from '../utils/auditLogger';
 
 interface AnalysisPayload {
   issueKey?: string;
@@ -22,12 +23,14 @@ interface CommitInfo {
  * Integrates Jira + Bitbucket + Confluence data
  */
 export async function handler(payload: unknown): Promise<{ analysis: string }> {
+  const startTime = Date.now();
+  const typedPayload = payload as AnalysisPayload;
+  const issueKey = typedPayload?.issueKey;
+  const actor = 'system'; // In production, get from context
+
   try {
     console.warn('[PitWall Analyzer] 🤖 Race Engineer analyzing incident...');
     console.warn('[PitWall Analyzer] 🔄 Cross-Product AI Context Engine activated');
-
-    const typedPayload = payload as AnalysisPayload;
-    const issueKey = typedPayload?.issueKey;
 
     let issueData = null;
     let recentCommits: CommitInfo[] = [];
@@ -186,11 +189,25 @@ ${strategy.steps.map((step, i) => `   ${i + 1}. ${step}`).join('\n')}
       });
     }
 
+    // STEP 11: Log successful analysis to audit trail
+    const duration = Date.now() - startTime;
+    await logIncidentAnalysis(issueKey || 'Unknown', actor, 'success', duration);
+
     return {
       analysis,
     };
   } catch (error) {
     console.error('[PitWall Analyzer] ❌ Error during analysis:', error);
+
+    // Log failed analysis to audit trail
+    const duration = Date.now() - startTime;
+    await logIncidentAnalysis(
+      issueKey || 'Unknown',
+      actor,
+      'failure',
+      duration,
+      error instanceof Error ? error.message : 'Unknown error'
+    );
 
     // Graceful degradation
     return {
