@@ -1,4 +1,5 @@
 import { storage } from '@forge/api';
+import { UsageAnalytics } from './usageAnalytics';
 
 /**
  * Incident Pattern
@@ -77,6 +78,13 @@ export class PatternDetector {
       // Store detected patterns
       await storage.set(this.PATTERNS_KEY, patterns);
 
+      // Track usage analytics
+      await UsageAnalytics.trackEvent('pattern_detected', 'system', {
+        patternCount: patterns.length,
+        highRiskPatterns: patterns.filter(p => p.riskScore >= 70).length,
+        totalIncidents: incidents.length,
+      });
+
       return {
         patterns: patterns.sort((a, b) => b.riskScore - a.riskScore), // Sort by risk
         totalIncidents: incidents.length,
@@ -84,6 +92,12 @@ export class PatternDetector {
       };
     } catch (error) {
       console.error('[Pattern Detector] ❌ Error detecting patterns:', error);
+
+      // Track failed analytics
+      await UsageAnalytics.trackEvent('pattern_detected', 'system', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }, undefined, false);
+
       return {
         patterns: [],
         totalIncidents: 0,

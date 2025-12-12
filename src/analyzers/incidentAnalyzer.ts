@@ -3,6 +3,7 @@ import { scanBitbucketCommits, extractKeywords } from '../scanners/bitbucketScan
 import { findRelatedRunbooks } from '../scanners/confluenceScanner';
 import { analyzeWithAtlassianAI } from '../ai/atlassianAI';
 import { logIncidentAnalysis } from '../utils/auditLogger';
+import { UsageAnalytics } from '../analytics/usageAnalytics';
 
 interface AnalysisPayload {
   issueKey?: string;
@@ -193,6 +194,14 @@ ${strategy.steps.map((step, i) => `   ${i + 1}. ${step}`).join('\n')}
     const duration = Date.now() - startTime;
     await logIncidentAnalysis(issueKey || 'Unknown', actor, 'success', duration);
 
+    // STEP 12: Track usage analytics
+    await UsageAnalytics.trackEvent('incident_analyzed', actor, {
+      issueKey,
+      riskLevel: rootCause.riskLevel,
+      hasRunbooks: confluenceScan.runbooks.length > 0,
+      hasSuspiciousCommits: bitbucketScan.suspects.length > 0,
+    }, duration, true);
+
     return {
       analysis,
     };
@@ -208,6 +217,12 @@ ${strategy.steps.map((step, i) => `   ${i + 1}. ${step}`).join('\n')}
       duration,
       error instanceof Error ? error.message : 'Unknown error'
     );
+
+    // Track failed usage analytics
+    await UsageAnalytics.trackEvent('incident_analyzed', actor, {
+      issueKey,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }, duration, false);
 
     // Graceful degradation
     return {
